@@ -1,0 +1,44 @@
+# Fichiers Excel et données
+*.xlsx
+*.xls
+*.csv
+
+# Dossiers de cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environnement virtuel
+venv/
+ENV/
+env/
+.venv
+
+# Images et données
+src/images/
+src/output/
+output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Notebooks temporaires
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Fichiers temporaires
+*.tmp
+.cache/

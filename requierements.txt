@@ -1,0 +1,10 @@
+numpy
+opencv-python
+pandas
+plotly==5.9.0
+scikit-image
+scikit-learn
+streamlit==1.31.1
+tensorflow
+matplotlib
+openpyxl
