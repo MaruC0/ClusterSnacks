@@ -2,6 +2,8 @@
 
 ### step 1 : téléchargement des données et installation des packages
     - a. installer les requierements : "pip install -r requierements.txt"
+    - b. télécharger les données des images des snacks : https://huggingface.co/datasets/Matthijs/snacks/tree/main
+    => télécharger le zip images, dézipper et placer le dossier dans le projet (le programme s'occupe tout seul d'aller chercher les images de test au bon endroit)
 
 ### step 2 : configuration du chemin vers les donnés
     - a. dans le dossier src/constant.py, modifier la variable "PATH_DATA" par le chemin vers le dossier contenant les données à clusteriser.
