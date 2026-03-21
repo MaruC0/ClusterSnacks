@@ -14,32 +14,40 @@ from constant import PATH_OUTPUT, PATH_DATA, MODELS_DIR, PATH_ALL_DATA
 # Mapping descripteur → clé fichier
 DESC_KEY_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simclr", "COLOR_HIST": "color"}
 
+AGGLOMERATIVE_CONFIG = {"linkage": "ward"}
 # Config SpectralClustering par descripteur
 SPECTRAL_CONFIGS = {
-    "HISTOGRAM": {"n_neighbors": 20, "pca_components": 32},
-    "HOG":       {"n_neighbors": 15, "pca_components": 64},
-    "LBP":       {"n_neighbors": 20, "pca_components": 16},
-    "SIMCLR":    {"n_neighbors": 15, "pca_components": 64},
-    "COLOR_HIST": {"n_neighbors": 20, "pca_components": 16},
+    "HISTOGRAM": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.3, "pca_components": 32},
+    "HOG":       {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 10.0, "pca_components": 64},
+    "LBP":       {"affinity": "rbf", "n_neighbors": 20, "gamma": 3.0, "pca_components": 16},
+    "SIMCLR":    {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 1.0, "pca_components": 64},
+    "COLOR_HIST": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.03, "pca_components": 16},
 }
-AGGLOMERATIVE_CONFIG = {"linkage": "ward"}
+GAMMA_GRID_LOG = [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
+TEST_RBF_GAMMA_GRID = False
 
 def _create_models(n_clusters, desc_name):
-    """Crée les 3 modèles de clustering pour un descripteur donné."""
+    """Crée les modèles de clustering pour un descripteur donné."""
     sc_cfg = SPECTRAL_CONFIGS[desc_name]
+    spectral_kwargs = {
+        "n_clusters": n_clusters,
+        "affinity": sc_cfg.get("affinity", "nearest_neighbors"),
+        "assign_labels": 'cluster_qr',
+        "pca_components": sc_cfg["pca_components"],
+        "random_state": 42,
+    }
+
+    if spectral_kwargs["affinity"] == "nearest_neighbors":
+        spectral_kwargs["n_neighbors"] = sc_cfg["n_neighbors"]
+    elif spectral_kwargs["affinity"] == "rbf":
+        spectral_kwargs["gamma"] = sc_cfg["gamma"]
+
     return {
-        "kmeans": KMeans(n_clusters=n_clusters, random_state=42),
-        "spectral": SpectralClustering(
-            n_clusters=n_clusters,
-            affinity='nearest_neighbors',
-            n_neighbors=sc_cfg["n_neighbors"],
-            assign_labels='cluster_qr',
-            pca_components=sc_cfg["pca_components"],
-            random_state=42
-        ),
-        "agglomerative": AgglomerativeClustering(n_clusters=n_clusters, 
-            linkage=AGGLOMERATIVE_CONFIG["linkage"]),
-        "diana": DIANA(n_clusters=n_clusters, random_state=42),
+        ##"kmeans": KMeans(n_clusters=n_clusters, random_state=42),
+        "spectral": SpectralClustering(**spectral_kwargs)
+        ##"agglomerative": AgglomerativeClustering(n_clusters=n_clusters, 
+            ##linkage=AGGLOMERATIVE_CONFIG["linkage"]),
+        ##"diana": DIANA(n_clusters=n_clusters, random_state=42),
     }
 
 
@@ -87,6 +95,52 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
     for desc_name, desc_data in descriptors.items():
         data = np.array(desc_data)
         desc_key = DESC_KEY_MAP[desc_name]
+        sc_cfg = SPECTRAL_CONFIGS[desc_name]
+
+        if TEST_RBF_GAMMA_GRID:
+            print(f"- spectral + {desc_name} [RBF gamma grid] ...")
+
+            best_silhouette = -np.inf
+            best_model = None
+            best_labels = None
+            best_gamma = None
+
+            for gamma in GAMMA_GRID_LOG:
+                model = SpectralClustering(
+                    n_clusters=number_cluster,
+                    affinity='rbf',
+                    gamma=gamma,
+                    assign_labels='cluster_qr',
+                    pca_components=sc_cfg["pca_components"],
+                    random_state=42
+                )
+                model.fit(data)
+
+                unique, counts = np.unique(model.labels_, return_counts=True)
+                print(f"  gamma={gamma}: {len(unique)} clusters, distribution={dict(zip(unique.tolist(), counts.tolist()))}")
+
+                metric = show_metric(
+                    labels_true, model.labels_, desc_data,
+                    bool_show=True, name_descriptor=desc_name,
+                    name_model=f"spectral_rbf_gamma_{gamma}", bool_return=True
+                )
+                metric["gamma"] = gamma
+                all_metrics.append(metric)
+
+                if metric["silhouette"] > best_silhouette:
+                    best_silhouette = metric["silhouette"]
+                    best_model = model
+                    best_labels = model.labels_
+                    best_gamma = gamma
+
+            print(f"  -> meilleur gamma: {best_gamma} (silhouette={best_silhouette:.4f})")
+            cluster_results[(desc_key, "spectral")] = {
+                "model": best_model,
+                "data": data,
+                "labels": best_labels,
+            }
+            continue
+
         models = _create_models(number_cluster, desc_name)
 
         for model_name, model in models.items():
@@ -108,6 +162,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
                 "labels": model.labels_,
             }
 
+    '''
     # ── Silhouette Score Tracking ─────────────────────────────────
     print("\n\n##### Silhouette Score Tracking ######")
     k_values = [5, 10, 15, 20, 25]
@@ -123,13 +178,19 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
             sil_km = silhouette_score(data, km.labels_)
 
             sc_cfg = SPECTRAL_CONFIGS[desc_name]
-            sc = SpectralClustering(
-                n_clusters=k, affinity='nearest_neighbors',
-                n_neighbors=sc_cfg["n_neighbors"],
-                assign_labels='cluster_qr',
-                pca_components=sc_cfg["pca_components"],
-                random_state=42
-            )
+            spectral_kwargs = {
+                "n_clusters": k,
+                "affinity": sc_cfg.get("affinity", "nearest_neighbors"),
+                "assign_labels": 'cluster_qr',
+                "pca_components": sc_cfg["pca_components"],
+                "random_state": 42,
+            }
+            if spectral_kwargs["affinity"] == "nearest_neighbors":
+                spectral_kwargs["n_neighbors"] = sc_cfg["n_neighbors"]
+            elif spectral_kwargs["affinity"] == "rbf":
+                spectral_kwargs["gamma"] = sc_cfg.get("gamma", 1.0)
+
+            sc = SpectralClustering(**spectral_kwargs)
             sc.fit(data)
             sil_sc = silhouette_score(data, sc.labels_)
 
@@ -150,6 +211,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
             print(f"  {desc_name}: km={sil_km:.4f}  sp={sil_sc:.4f}  ag={sil_ac:.4f}  di={sil_diana:.4f}")
 
     df_silhouette = pd.DataFrame(silhouette_records)
+    '''
 
     # ── Export des données ────────────────────────────────────────
     print("\n\n- export des données vers le dashboard")
@@ -165,7 +227,8 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
         data_norm = scaler.fit_transform(data)
         x_3d = conversion_3d(data_norm)
 
-        for model_name in ["kmeans", "spectral", "agglomerative", "diana"]:
+        ##for model_name in ["kmeans", "spectral", "agglomerative", "diana"]:
+        for model_name in ["spectral"]:
             result = cluster_results[(desc_key, model_name)]
             df_export = create_df_to_export(x_3d, labels_true, result["labels"])
             df_export.to_excel(f"{path_output}/save_clustering_{desc_key}_{model_name}.xlsx")
@@ -179,7 +242,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
                 np.save(f"{path_output}/centroids_{model_name}_{desc_key}.npy", centroids)
 
     df_metric.to_excel(f"{path_output}/save_metric.xlsx")
-    df_silhouette.to_excel(f"{path_output}/save_silhouette_tracking.xlsx", index=False)
+    #df_silhouette.to_excel(f"{path_output}/save_silhouette_tracking.xlsx", index=False)
 
     print("Fin. \n\n Pour avoir la visualisation dashboard, veuillez lancer la commande : streamlit run dashboard_clustering.py")
 

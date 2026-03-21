@@ -110,8 +110,9 @@ class SpectralClustering:
     def __init__(
         self,
         n_clusters=8,
-        affinity='nearest_neighbors',
+        affinity='rbf',
         n_neighbors=15,
+        gamma=3.0,
         assign_labels='cluster_qr',
         pca_components=64,
         random_state=42
@@ -121,12 +122,15 @@ class SpectralClustering:
 
         Entrées:
         - n_clusters (int): Le nombre de clusters à former (par défaut 8).
-        - affinity (str): Type d'affinité pour la matrice de similarité (par défaut 'rbf').
-        - random_state (int ou None): La graine pour initialiser le générateur de nombres aléatoires (par défaut None).
+        - affinity (str): Type d'affinité pour la matrice de similarité ('nearest_neighbors' ou 'rbf').
+        - n_neighbors (int): Nombre de voisins si affinity='nearest_neighbors'.
+        - gamma (float): Paramètre gamma du noyau RBF si affinity='rbf'.
+        - random_state (int ou None): La graine pour initialiser le générateur de nombres aléatoires.
         """
         self.n_clusters = n_clusters
         self.affinity = affinity
         self.n_neighbors = n_neighbors
+        self.gamma = gamma
         self.assign_labels = assign_labels
         self.pca_components = pca_components
         self.random_state = random_state
@@ -231,6 +235,12 @@ class SpectralClustering:
         if self.affinity == 'nearest_neighbors':
             self.used_n_neighbors_ = self._get_connected_n_neighbors(X)
             spectral_kwargs["n_neighbors"] = self.used_n_neighbors_
+        elif self.affinity == 'rbf':
+            spectral_kwargs["gamma"] = self.gamma
+        else:
+            raise ValueError(
+                f"Affinity '{self.affinity}' non supportée. Utiliser 'nearest_neighbors' ou 'rbf'."
+            )
 
         self.clusterer_ = SklearnSpectralClustering(**spectral_kwargs)
         labels = self.clusterer_.fit_predict(X)
