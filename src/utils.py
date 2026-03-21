@@ -45,6 +45,28 @@ def create_df_to_export(data_3d, l_true_label,l_cluster):
     
     return df
 
+def scan_all_images(base_dir):
+    """
+    Scanne récursivement toutes les images d'un répertoire (y compris sous-dossiers).
+
+    Paramètres:
+        base_dir (str): Chemin vers le répertoire racine.
+
+    Retourne:
+        paths (list): Liste triée des chemins absolus vers les images trouvées.
+    """
+    paths = []
+    abs_path = os.path.abspath(base_dir)
+    if not os.path.exists(abs_path):
+        return paths
+    for root, dirs, files in os.walk(abs_path):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and not d.startswith('__')]
+        for f in sorted(files):
+            if f.lower().endswith(VALID_EXTENSIONS) and not f.startswith('.'):
+                paths.append(os.path.join(root, f))
+    return sorted(paths)
+
+
 def load_images(path_data=PATH_DATA):
     """
     Charge toutes les images depuis le répertoire de données.

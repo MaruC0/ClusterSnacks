@@ -1,23 +1,25 @@
-# Projet de clustering des immages Digit pour ET4 info Polytech Paris Saclay
+# Projet de clustering des images Snacks pour ET4 info Polytech Paris Saclay
 
 ### step 1 : téléchargement des données et installation des packages
     - a. installer les requierements : "pip install -r requierements.txt"
     - b. télécharger les données des images des snacks : https://huggingface.co/datasets/Matthijs/snacks/tree/main
-    => télécharger le zip images, dézipper et placer le dossier dans le projet (le programme s'occupe tout seul d'aller chercher les images de test au bon endroit)
+    => télécharger le zip images, dézipper et placer le dossier dans le projet (structure : images/data/train, images/data/test, images/data/validation)
 
-### step 2 : configuration du chemin vers les donnés
-    - a. dans le dossier src/constant.py, modifier la variable "PATH_DATA" par le chemin vers le dossier contenant les données à clusteriser.
+### step 2 : configuration du chemin vers les données
+    - a. dans le dossier src/constant.py, modifier les variables PATH_DATA et PATH_ALL_DATA si nécessaire.
 
-### step 3 :  run de la pipeline clustering
+### step 3 : run de la pipeline clustering
     - a. aller dans le dossier src
-    - c. exécutez la commande : "python pipeline.py"
-    
-### step 4 : lancement du dashboard
-    - a. aller dans le dossier src 
-    - b. exécutez la commande : "streamlit run dashboard_clustering.py"
+    - b. exécutez la commande : "python pipeline.py --path_data images/data/test --path_output output"
+    - Descripteurs : HOG, Histogram, LBP, SimCLR (entraîné automatiquement si absent)
+    - Modèles : KMeans, Spectral Clustering, Agglomerative Clustering
 
-### step 5 : Créer un docker
+### step 4 : lancement du dashboard
+    - a. aller dans le dossier src
+    - b. exécutez la commande : "streamlit run dashboard_clustering.py -- --path_data output"
+    - Onglets : Analyse par descripteur, Analyse global, Prédiction en direct, Entraînement SimCLR
+
+### step 5 : Docker
     - a. installer docker
-    - b. compléter le dockerfile pour lancer votre dashboard depuis le docker
-    - c. pour build une image docker : docker build -t mon-app-python .
-    - d. pour run l'image :  docker run -d -p 8000:8000 mon-app-python 
+    - b. pour build une image docker : docker build -t mon-app-python .
+    - c. pour run l'image : docker run -d -p 8501:8501 mon-app-python

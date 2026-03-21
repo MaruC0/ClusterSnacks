@@ -17,6 +17,7 @@ env/
 .venv
 
 # Images et données
+images/
 src/images/
 src/output/
 output/

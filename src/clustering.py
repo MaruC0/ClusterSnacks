@@ -1,5 +1,6 @@
 from sklearn.metrics import adjusted_rand_score, silhouette_score
 from sklearn.cluster import SpectralClustering as SklearnSpectralClustering
+from sklearn.cluster import AgglomerativeClustering as SklearnAgglomerative
 import numpy as np
 from sklearn import metrics
 from sklearn.preprocessing import LabelEncoder, StandardScaler, normalize
@@ -246,6 +247,43 @@ class SpectralClustering:
 
         Sortie:
         - np.array: Un tableau d'indices représentant le cluster pour chaque point.
+        """
+        return self.labels_
+
+
+class AgglomerativeClustering:
+    def __init__(self, n_clusters=8, linkage='ward', random_state=None):
+        """
+        Initialise un objet AgglomerativeClustering (wrapper sklearn).
+
+        Entrées:
+        - n_clusters (int): Le nombre de clusters à former (par défaut 8).
+        - linkage (str): Critère de liaison ('ward', 'complete', 'average', 'single').
+        - random_state: Ignoré, présent pour compatibilité d'interface.
+        """
+        self.n_clusters = n_clusters
+        self.linkage = linkage
+        self.random_state = random_state
+        self.labels_ = None
+        self.cluster_centers_ = None
+
+    def fit(self, X):
+        """
+        Exécute l'algorithme Agglomerative Clustering sur les données X.
+
+        Entrée:
+        - X (np.array): Les données d'entrée.
+        """
+        X = np.asarray(X, dtype=np.float32)
+        model = SklearnAgglomerative(n_clusters=self.n_clusters, linkage=self.linkage)
+        self.labels_ = model.fit_predict(X)
+        self.cluster_centers_ = np.array([
+            X[self.labels_ == i].mean(axis=0) for i in range(self.n_clusters)
+        ])
+
+    def predict(self, X):
+        """
+        Retourne les labels du dernier fit.
         """
         return self.labels_
 

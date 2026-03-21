@@ -1,150 +1,181 @@
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
 import os
+import argparse
 import pandas as pd
 import numpy as np
 
 from features import *
 from clustering import *
 from utils import *
-from constant import PATH_OUTPUT, PATH_DATA
+from simclr_model import SimCLRModel
+from constant import PATH_OUTPUT, PATH_DATA, MODELS_DIR, PATH_ALL_DATA
 
-def pipeline():
+# Mapping descripteur → clé fichier
+DESC_KEY_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simclr"}
+
+# Config SpectralClustering par descripteur
+SPECTRAL_CONFIGS = {
+    "HISTOGRAM": {"n_neighbors": 20, "pca_components": 32},
+    "HOG":       {"n_neighbors": 15, "pca_components": 64},
+    "LBP":       {"n_neighbors": 20, "pca_components": 16},
+    "SIMCLR":    {"n_neighbors": 15, "pca_components": 64},
+}
+
+
+def _create_models(n_clusters, desc_name):
+    """Crée les 3 modèles de clustering pour un descripteur donné."""
+    sc_cfg = SPECTRAL_CONFIGS[desc_name]
+    return {
+        "kmeans": KMeans(n_clusters=n_clusters, random_state=42),
+        "spectral": SpectralClustering(
+            n_clusters=n_clusters,
+            affinity='nearest_neighbors',
+            n_neighbors=sc_cfg["n_neighbors"],
+            assign_labels='cluster_qr',
+            pca_components=sc_cfg["pca_components"],
+            random_state=42
+        ),
+        "agglomerative": AgglomerativeClustering(n_clusters=n_clusters),
+    }
+
+
+def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
     print("##### Chargement des données ######")
+    images, labels_true, img_paths = load_images(path_data=path_data)
 
-    images, labels_true, img_paths = load_images(path_data=PATH_DATA)
-   
+    # ── Extraction de Features ────────────────────────────────────
     print("\n\n ##### Extraction de Features ######")
-    print("- calcul features hog...")
+
+    print("- calcul features HOG...")
     descriptors_hog = compute_hog_descriptors(images)
     print("- calcul features Histogram...")
     descriptors_hist = compute_gray_histograms(images)
     print("- calcul features LBP...")
     descriptors_lbp = compute_lbp_descriptors(images)
 
+    print("- calcul features SimCLR...")
+    simclr = SimCLRModel(models_dir=MODELS_DIR)
+    if not simclr.is_trained():
+        print("[SimCLR] Aucun modèle trouvé — entraînement automatique...")
+        all_paths = scan_all_images(PATH_ALL_DATA)
+        if len(all_paths) > 0:
+            simclr.train(all_paths, epochs=100, batch_size=32)
+        else:
+            print(f"[WARN] Aucune image trouvée dans {PATH_ALL_DATA} pour l'entraînement SimCLR")
+    descriptors_simclr = compute_simclr_descriptors(img_paths, models_dir=MODELS_DIR)
 
+    descriptors = {
+        "HISTOGRAM": descriptors_hist,
+        "HOG":       descriptors_hog,
+        "LBP":       descriptors_lbp,
+        "SIMCLR":    descriptors_simclr,
+    }
+
+    # ── Clustering ────────────────────────────────────────────────
     print("\n\n ##### Clustering ######")
     number_cluster = 20
-    
-    kmeans_hog = KMeans(n_clusters=number_cluster, random_state=42)
-    kmeans_hist = KMeans(n_clusters=number_cluster, random_state=42)
-    kmeans_lbp = KMeans(n_clusters=number_cluster, random_state=42)
-    
-    spectral_hog = SpectralClustering(
-        n_clusters=number_cluster,
-        affinity='nearest_neighbors',
-        n_neighbors=15,
-        assign_labels='cluster_qr',
-        pca_components=64,
-        random_state=42
-    )
-    spectral_hist = SpectralClustering(
-        n_clusters=number_cluster,
-        affinity='nearest_neighbors',
-        n_neighbors=20,
-        assign_labels='cluster_qr',
-        pca_components=32,
-        random_state=42
-    )
-    spectral_lbp = SpectralClustering(
-        n_clusters=number_cluster,
-        affinity='nearest_neighbors',
-        n_neighbors=20,
-        assign_labels='cluster_qr',
-        pca_components=16,
-        random_state=42
-    )
+    all_metrics = []
+    cluster_results = {}
 
-    print("- calcul kmeans avec features HOG ...")
-    kmeans_hog.fit(np.array(descriptors_hog))
-    print("- calcul kmeans avec features Histogram...")
-    kmeans_hist.fit(np.array(descriptors_hist))
-    print("- calcul kmeans avec features LBP...")
-    kmeans_lbp.fit(np.array(descriptors_lbp))
-    
-    print("- calcul spectral clustering avec features HOG ...")
-    spectral_hog.fit(np.array(descriptors_hog))
-    print("- calcul spectral clustering avec features Histogram...")
-    spectral_hist.fit(np.array(descriptors_hist))
-    print("- calcul spectral clustering avec features LBP...")
-    spectral_lbp.fit(np.array(descriptors_lbp))
+    for desc_name, desc_data in descriptors.items():
+        data = np.array(desc_data)
+        desc_key = DESC_KEY_MAP[desc_name]
+        models = _create_models(number_cluster, desc_name)
 
-    print("\n=== KMeans ===")
-    kmeans_hog_unique, kmeans_hog_counts = np.unique(kmeans_hog.labels_, return_counts=True)
-    kmeans_hist_unique, kmeans_hist_counts = np.unique(kmeans_hist.labels_, return_counts=True)
-    kmeans_lbp_unique, kmeans_lbp_counts = np.unique(kmeans_lbp.labels_, return_counts=True)
-    print(f"- HOG: {len(kmeans_hog_unique)} clusters, distribution={dict(zip(kmeans_hog_unique.tolist(), kmeans_hog_counts.tolist()))}")
-    print(f"- HIST: {len(kmeans_hist_unique)} clusters, distribution={dict(zip(kmeans_hist_unique.tolist(), kmeans_hist_counts.tolist()))}")
-    print(f"- LBP: {len(kmeans_lbp_unique)} clusters, distribution={dict(zip(kmeans_lbp_unique.tolist(), kmeans_lbp_counts.tolist()))}")
-    
-    print("\n=== Spectral Clustering ===")
-    hog_unique, hog_counts = np.unique(spectral_hog.labels_, return_counts=True)
-    hist_unique, hist_counts = np.unique(spectral_hist.labels_, return_counts=True)
-    lbp_unique, lbp_counts = np.unique(spectral_lbp.labels_, return_counts=True)
-    print(f"- HOG: {len(hog_unique)} clusters distincts, distribution={dict(zip(hog_unique.tolist(), hog_counts.tolist()))}")
-    print(f"- HIST: {len(hist_unique)} clusters distincts, distribution={dict(zip(hist_unique.tolist(), hist_counts.tolist()))}")
-    print(f"- LBP: {len(lbp_unique)} clusters distincts, distribution={dict(zip(lbp_unique.tolist(), lbp_counts.tolist()))}")
-    print(f"- n_neighbors utilisé (HOG): {spectral_hog.used_n_neighbors_}")
-    print(f"- n_neighbors utilisé (HIST): {spectral_hist.used_n_neighbors_}")
-    print(f"- n_neighbors utilisé (LBP): {spectral_lbp.used_n_neighbors_}")
+        for model_name, model in models.items():
+            print(f"- {model_name} + {desc_name} ...")
+            model.fit(data)
 
-    print("\n\n##### Résultats KMeans ######")
-    metric_kmeans_hist = show_metric(labels_true, kmeans_hist.labels_, descriptors_hist, bool_show=True, name_descriptor="HISTOGRAM", name_model="kmeans", bool_return=True)
-    print("\n")
-    metric_kmeans_hog = show_metric(labels_true, kmeans_hog.labels_, descriptors_hog, bool_show=True, name_descriptor="HOG", name_model="kmeans", bool_return=True)
-    print("\n")
-    metric_kmeans_lbp = show_metric(labels_true, kmeans_lbp.labels_, descriptors_lbp, bool_show=True, name_descriptor="LBP", name_model="kmeans", bool_return=True)
-    
-    print("\n\n##### Résultats Spectral Clustering ######")
-    metric_hist = show_metric(labels_true, spectral_hist.labels_, descriptors_hist, bool_show=True, name_descriptor="HISTOGRAM", name_model="spectral", bool_return=True)
-    print("\n")
-    metric_hog = show_metric(labels_true, spectral_hog.labels_, descriptors_hog, bool_show=True, name_descriptor="HOG", name_model="spectral", bool_return=True)
-    print("\n")
-    metric_lbp = show_metric(labels_true, spectral_lbp.labels_, descriptors_lbp, bool_show=True, name_descriptor="LBP", name_model="spectral", bool_return=True)
+            unique, counts = np.unique(model.labels_, return_counts=True)
+            print(f"  {len(unique)} clusters, distribution={dict(zip(unique.tolist(), counts.tolist()))}")
 
+            metric = show_metric(
+                labels_true, model.labels_, desc_data,
+                bool_show=True, name_descriptor=desc_name,
+                name_model=model_name, bool_return=True
+            )
+            all_metrics.append(metric)
+            cluster_results[(desc_key, model_name)] = {
+                "model": model,
+                "data": data,
+                "labels": model.labels_,
+            }
 
-    print("- export des données vers le dashboard")
-    # conversion des données vers le format du dashboard
-    list_dict = [metric_kmeans_hist, metric_kmeans_hog, metric_kmeans_lbp, metric_hist, metric_hog, metric_lbp]
-    df_metric = pd.DataFrame(list_dict)
-    
-    # Normalisation des données
+    # ── Silhouette Score Tracking ─────────────────────────────────
+    print("\n\n##### Silhouette Score Tracking ######")
+    k_values = [5, 10, 15, 20, 25]
+    silhouette_records = []
+
+    for k in k_values:
+        print(f"--- k = {k} ---")
+        for desc_name, desc_data in descriptors.items():
+            data = np.array(desc_data)
+
+            km = KMeans(n_clusters=k, random_state=42)
+            km.fit(data)
+            sil_km = silhouette_score(data, km.labels_)
+
+            sc_cfg = SPECTRAL_CONFIGS[desc_name]
+            sc = SpectralClustering(
+                n_clusters=k, affinity='nearest_neighbors',
+                n_neighbors=sc_cfg["n_neighbors"],
+                assign_labels='cluster_qr',
+                pca_components=sc_cfg["pca_components"],
+                random_state=42
+            )
+            sc.fit(data)
+            sil_sc = silhouette_score(data, sc.labels_)
+
+            ac = AgglomerativeClustering(n_clusters=k)
+            ac.fit(data)
+            sil_ac = silhouette_score(data, ac.labels_)
+
+            silhouette_records.extend([
+                {"k": k, "descriptor": desc_name, "model": "kmeans",        "silhouette": sil_km},
+                {"k": k, "descriptor": desc_name, "model": "spectral",      "silhouette": sil_sc},
+                {"k": k, "descriptor": desc_name, "model": "agglomerative", "silhouette": sil_ac},
+            ])
+            print(f"  {desc_name}: km={sil_km:.4f}  sp={sil_sc:.4f}  ag={sil_ac:.4f}")
+
+    df_silhouette = pd.DataFrame(silhouette_records)
+
+    # ── Export des données ────────────────────────────────────────
+    print("\n\n- export des données vers le dashboard")
+    df_metric = pd.DataFrame(all_metrics)
+
+    if not os.path.exists(path_output):
+        os.makedirs(path_output)
+
     scaler = StandardScaler()
-    descriptors_hist_norm = scaler.fit_transform(descriptors_hist)
-    descriptors_hog_norm = scaler.fit_transform(descriptors_hog)
-    descriptors_lbp_norm = scaler.fit_transform(descriptors_lbp)
+    for desc_name, desc_data in descriptors.items():
+        desc_key = DESC_KEY_MAP[desc_name]
+        data = np.array(desc_data)
+        data_norm = scaler.fit_transform(data)
+        x_3d = conversion_3d(data_norm)
 
-    #conversion vers un format 3D pour la visualisation
-    x_3d_hist = conversion_3d(descriptors_hist_norm)
-    x_3d_hog = conversion_3d(descriptors_hog_norm)
-    x_3d_lbp = conversion_3d(descriptors_lbp_norm)
+        for model_name in ["kmeans", "spectral", "agglomerative"]:
+            result = cluster_results[(desc_key, model_name)]
+            df_export = create_df_to_export(x_3d, labels_true, result["labels"])
+            df_export.to_excel(f"{path_output}/save_clustering_{desc_key}_{model_name}.xlsx")
 
-    # création des dataframe pour la sauvegarde des données pour la visualisation (KMeans)
-    df_hist_kmeans = create_df_to_export(x_3d_hist, labels_true, kmeans_hist.labels_)
-    df_hog_kmeans = create_df_to_export(x_3d_hog, labels_true, kmeans_hog.labels_)
-    df_lbp_kmeans = create_df_to_export(x_3d_lbp, labels_true, kmeans_lbp.labels_)
-    
-    # création des dataframe pour la sauvegarde des données pour la visualisation (Spectral)
-    df_hist = create_df_to_export(x_3d_hist, labels_true, spectral_hist.labels_)
-    df_hog = create_df_to_export(x_3d_hog, labels_true, spectral_hog.labels_)
-    df_lbp = create_df_to_export(x_3d_lbp, labels_true, spectral_lbp.labels_)
+            model_obj = result["model"]
+            if hasattr(model_obj, 'cluster_centers_') and model_obj.cluster_centers_ is not None:
+                np.save(f"{path_output}/centroids_{model_name}_{desc_key}.npy", model_obj.cluster_centers_)
+            else:
+                centroids = np.array([data[result["labels"] == i].mean(axis=0)
+                                      for i in range(number_cluster)])
+                np.save(f"{path_output}/centroids_{model_name}_{desc_key}.npy", centroids)
 
-    # Vérifie si le dossier existe déjà
-    if not os.path.exists(PATH_OUTPUT):
-        # Crée le dossier
-        os.makedirs(PATH_OUTPUT)
+    df_metric.to_excel(f"{path_output}/save_metric.xlsx")
+    df_silhouette.to_excel(f"{path_output}/save_silhouette_tracking.xlsx", index=False)
 
-    # sauvegarde des données KMeans
-    df_hist_kmeans.to_excel(PATH_OUTPUT+"/save_clustering_hist_kmeans.xlsx")
-    df_hog_kmeans.to_excel(PATH_OUTPUT+"/save_clustering_hog_kmeans.xlsx")
-    df_lbp_kmeans.to_excel(PATH_OUTPUT+"/save_clustering_lbp_kmeans.xlsx")
-    
-    # sauvegarde des données Spectral
-    df_hist.to_excel(PATH_OUTPUT+"/save_clustering_hist_spectral.xlsx")
-    df_hog.to_excel(PATH_OUTPUT+"/save_clustering_hog_spectral.xlsx")
-    df_lbp.to_excel(PATH_OUTPUT+"/save_clustering_lbp_spectral.xlsx")
-    
-    df_metric.to_excel(PATH_OUTPUT+"/save_metric.xlsx")
     print("Fin. \n\n Pour avoir la visualisation dashboard, veuillez lancer la commande : streamlit run dashboard_clustering.py")
 
+
 if __name__ == "__main__":
-    pipeline()
+    parser = argparse.ArgumentParser(description="Pipeline de clustering d'images")
+    parser.add_argument('--path_data', type=str, default=PATH_DATA, help="Chemin vers les données images")
+    parser.add_argument('--path_output', type=str, default=PATH_OUTPUT, help="Chemin vers le dossier de sortie")
+    args = parser.parse_args()
+    pipeline(path_data=args.path_data, path_output=args.path_output)

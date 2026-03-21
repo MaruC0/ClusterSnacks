@@ -4,6 +4,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from skimage.feature import hog, local_binary_pattern
 from skimage import transform
+from sklearn.preprocessing import normalize
 import itertools
 
 def compute_gray_histograms(images, n_bins=64):
@@ -103,4 +104,100 @@ def compute_lbp_descriptors(
         descriptors.append(feature_vector)
 
     return descriptors
-    
+
+
+def compute_color_histograms(img_paths, h_bins=18, s_bins=8, size=64):
+    """
+    Calcule les histogrammes de couleur HSV (Hue + Saturation) à partir des images couleur.
+    Le Hue capture la teinte pure (indépendant de la luminosité),
+    la Saturation sépare les fonds gris des aliments colorés.
+
+    Input :
+    - img_paths (list) : liste des chemins vers les images
+    - h_bins (int) : nombre de bins pour la teinte (par défaut 18, couvrant 360° par pas de 20°)
+    - s_bins (int) : nombre de bins pour la saturation (par défaut 8)
+
+    Output :
+    - descriptors (list) : liste des descripteurs HSV normalisés
+    """
+    descriptors = []
+    for path in img_paths:
+        img = cv2.imread(path)
+        if img is None:
+            descriptors.append(np.zeros(h_bins + s_bins, dtype=np.float32))
+            continue
+        img = cv2.resize(img, (size, size))
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        h_hist = cv2.calcHist([hsv], [0], None, [h_bins], [0, 180]).flatten()
+        s_hist = cv2.calcHist([hsv], [1], None, [s_bins], [0, 256]).flatten()
+        hist = np.concatenate([h_hist, s_hist])
+        s = hist.sum()
+        if s > 0:
+            hist /= s
+        descriptors.append(hist.astype(np.float32))
+    return descriptors
+
+
+def compute_simclr_descriptors(img_paths, models_dir="trained-models",
+                                simclr_weight=0.7, color_weight=0.3):
+    """
+    Calcule les descripteurs SimCLR (ResNet50 fine-tuné) combinés avec
+    les histogrammes de couleur HSV.
+
+    Le SimCLR capture forme et texture, les histogrammes HSV capturent
+    la distribution de couleur dominante — la combinaison permet de
+    distinguer des aliments de forme similaire mais de couleur différente.
+
+    Input :
+    - img_paths (list) : liste des chemins vers les images
+    - models_dir (str) : chemin vers le dossier des modèles entraînés
+    - simclr_weight (float) : poids des features SimCLR (par défaut 0.7)
+    - color_weight (float) : poids des features couleur (par défaut 0.3)
+
+    Output :
+    - descriptors (list) : liste des descripteurs combinés
+    """
+    from simclr_model import SimCLRModel
+
+    model = SimCLRModel(models_dir=models_dir)
+    simclr_feats = model.extract_features(img_paths)
+    color_feats = np.array(compute_color_histograms(img_paths))
+
+    simclr_normed = normalize(simclr_feats) * simclr_weight
+    color_normed = normalize(color_feats) * color_weight
+
+    combined = np.concatenate([simclr_normed, color_normed], axis=1)
+    return [combined[i] for i in range(combined.shape[0])]
+
+
+def compute_simclr_descriptor_single(img_bgr, models_dir="trained-models",
+                                      simclr_weight=0.7, color_weight=0.3):
+    """
+    Calcule le descripteur SimCLR + couleur pour une seule image BGR.
+    Utilisé pour la prédiction en direct dans le dashboard.
+
+    Input :
+    - img_bgr (np.array) : image BGR (numpy array)
+    - models_dir (str) : chemin vers le dossier des modèles entraînés
+
+    Output :
+    - descriptor (np.array) : vecteur descripteur combiné
+    """
+    from simclr_model import SimCLRModel
+
+    model = SimCLRModel(models_dir=models_dir)
+    simclr_feat = model.extract_features_from_array(img_bgr)
+
+    img_small = cv2.resize(img_bgr, (64, 64))
+    hsv = cv2.cvtColor(img_small, cv2.COLOR_BGR2HSV)
+    h_hist = cv2.calcHist([hsv], [0], None, [18], [0, 180]).flatten()
+    s_hist = cv2.calcHist([hsv], [1], None, [8], [0, 256]).flatten()
+    color_hist = np.concatenate([h_hist, s_hist]).astype(np.float32)
+    s = color_hist.sum()
+    if s > 0:
+        color_hist /= s
+
+    simclr_normed = normalize(simclr_feat.reshape(1, -1))[0] * simclr_weight
+    color_normed = normalize(color_hist.reshape(1, -1))[0] * color_weight
+    return np.concatenate([simclr_normed, color_normed])
+
