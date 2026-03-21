@@ -20,8 +20,8 @@ args, _ = parser.parse_known_args()
 path_results = args.path_data
 
 # ── Mapping descripteurs / modèles ────────────────────────────────
-DESC_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simclr"}
-MODEL_MAP = {"KMeans": "kmeans", "Spectral Clustering": "spectral", "Agglomerative": "agglomerative"}
+DESC_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simclr", "COLOR_HIST": "color"}
+MODEL_MAP = {"KMeans": "kmeans", "Spectral Clustering": "spectral", "Agglomerative": "agglomerative", "DIANA": "diana"}
 
 # ── Chargement dynamique des résultats de clustering ──────────────
 @st.cache_data
@@ -199,6 +199,13 @@ with tab3:
                 features = np.array(compute_gray_histograms([img_gray])[0])
             elif pred_descriptor == "LBP":
                 features = np.array(compute_lbp_descriptors([img_gray])[0])
+            elif pred_descriptor == "COLOR_HIST": 
+                img_small = cv2.resize(img_bgr, (64, 64))
+                hsv = cv2.cvtColor(img_small, cv2.COLOR_BGR2HSV)
+                h_hist = cv2.calcHist([hsv], [0], None, [18], [0, 180]).flatten()
+                s_hist = cv2.calcHist([hsv], [1], None, [8], [0, 256]).flatten()
+                features = np.concatenate([h_hist, s_hist])
+                if features.sum() > 0: features /= features.sum()
 
             # Chargement des centroids
             model_key = MODEL_MAP[pred_model]

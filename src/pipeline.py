@@ -12,7 +12,7 @@ from simclr_model import SimCLRModel
 from constant import PATH_OUTPUT, PATH_DATA, MODELS_DIR, PATH_ALL_DATA
 
 # Mapping descripteur → clé fichier
-DESC_KEY_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simclr"}
+DESC_KEY_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simclr", "COLOR_HIST": "color"}
 
 # Config SpectralClustering par descripteur
 SPECTRAL_CONFIGS = {
@@ -20,8 +20,9 @@ SPECTRAL_CONFIGS = {
     "HOG":       {"n_neighbors": 15, "pca_components": 64},
     "LBP":       {"n_neighbors": 20, "pca_components": 16},
     "SIMCLR":    {"n_neighbors": 15, "pca_components": 64},
+    "COLOR_HIST": {"n_neighbors": 20, "pca_components": 16},
 }
-
+AGGLOMERATIVE_CONFIG = {"linkage": "ward"}
 
 def _create_models(n_clusters, desc_name):
     """Crée les 3 modèles de clustering pour un descripteur donné."""
@@ -36,7 +37,9 @@ def _create_models(n_clusters, desc_name):
             pca_components=sc_cfg["pca_components"],
             random_state=42
         ),
-        "agglomerative": AgglomerativeClustering(n_clusters=n_clusters),
+        "agglomerative": AgglomerativeClustering(n_clusters=n_clusters, 
+            linkage=AGGLOMERATIVE_CONFIG["linkage"]),
+        "diana": DIANA(n_clusters=n_clusters, random_state=42),
     }
 
 
@@ -53,6 +56,8 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
     descriptors_hist = compute_gray_histograms(images)
     print("- calcul features LBP...")
     descriptors_lbp = compute_lbp_descriptors(images)
+    print("- calcul features Color HSV (Your Part)...")
+    descriptors_color = compute_color_histograms(img_paths)
 
     print("- calcul features SimCLR...")
     simclr = SimCLRModel(models_dir=MODELS_DIR)
@@ -70,6 +75,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
         "HOG":       descriptors_hog,
         "LBP":       descriptors_lbp,
         "SIMCLR":    descriptors_simclr,
+        "COLOR_HIST": descriptors_color,
     }
 
     # ── Clustering ────────────────────────────────────────────────
@@ -130,13 +136,18 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
             ac = AgglomerativeClustering(n_clusters=k)
             ac.fit(data)
             sil_ac = silhouette_score(data, ac.labels_)
+            
+            diana_model = DIANA(n_clusters=k, random_state=42)
+            diana_model.fit(data)
+            sil_diana = silhouette_score(data, diana_model.labels_)
 
             silhouette_records.extend([
                 {"k": k, "descriptor": desc_name, "model": "kmeans",        "silhouette": sil_km},
                 {"k": k, "descriptor": desc_name, "model": "spectral",      "silhouette": sil_sc},
                 {"k": k, "descriptor": desc_name, "model": "agglomerative", "silhouette": sil_ac},
+                {"k": k, "descriptor": desc_name, "model": "diana",         "silhouette": sil_diana},
             ])
-            print(f"  {desc_name}: km={sil_km:.4f}  sp={sil_sc:.4f}  ag={sil_ac:.4f}")
+            print(f"  {desc_name}: km={sil_km:.4f}  sp={sil_sc:.4f}  ag={sil_ac:.4f}  di={sil_diana:.4f}")
 
     df_silhouette = pd.DataFrame(silhouette_records)
 
@@ -154,7 +165,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
         data_norm = scaler.fit_transform(data)
         x_3d = conversion_3d(data_norm)
 
-        for model_name in ["kmeans", "spectral", "agglomerative"]:
+        for model_name in ["kmeans", "spectral", "agglomerative", "diana"]:
             result = cluster_results[(desc_key, model_name)]
             df_export = create_df_to_export(x_3d, labels_true, result["labels"])
             df_export.to_excel(f"{path_output}/save_clustering_{desc_key}_{model_name}.xlsx")

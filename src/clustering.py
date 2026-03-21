@@ -287,6 +287,75 @@ class AgglomerativeClustering:
         """
         return self.labels_
 
+class DIANA:
+    def __init__(self, n_clusters=8, random_state=42):
+        """
+        Initialise l'algorithme DIANA (Divisive Analysis).
+        Approche Top-Down : commence avec 1 cluster et divise récursivement.
+        """
+        self.n_clusters = n_clusters
+        self.random_state = random_state
+        self.labels_ = None
+        self.cluster_centers_ = None
+
+    def fit(self, X):
+        X = np.asarray(X, dtype=np.float32)
+        n_samples = X.shape[0]
+        
+        # On commence avec tous les points dans le cluster 0
+        current_labels = np.zeros(n_samples, dtype=int)
+        n_current_clusters = 1
+
+        while n_current_clusters < self.n_clusters:
+            # 1. Trouver le cluster avec la plus grande inertie (le plus "étalé")
+            max_inertia = -1
+            cluster_to_split = -1
+            
+            for i in range(n_current_clusters):
+                cluster_points = X[current_labels == i]
+                if len(cluster_points) <= 1: continue
+                
+                centroid = cluster_points.mean(axis=0)
+                inertia = np.sum((cluster_points - centroid) ** 2)
+                
+                if inertia > max_inertia:
+                    max_inertia = inertia
+                    cluster_to_split = i
+            
+            if cluster_to_split == -1: break # Impossible de diviser plus
+
+            # 2. Diviser ce cluster en 2 avec un KMeans binaire
+            split_data = X[current_labels == cluster_to_split]
+            from sklearn.cluster import KMeans as SklearnKMeans
+            km = SklearnKMeans(n_clusters=2, random_state=self.random_state, n_init=10)
+            split_labels = km.fit_predict(split_data)
+
+            # 3. Mettre à jour les labels
+            # Les points avec split_labels == 1 reçoivent un nouvel ID de cluster
+            new_cluster_id = n_current_clusters
+            idx_in_original = np.where(current_labels == cluster_to_split)[0]
+            
+            for i, val in enumerate(split_labels):
+                if val == 1:
+                    current_labels[idx_in_original[i]] = new_cluster_id
+            
+            n_current_clusters += 1
+
+        self.labels_ = current_labels
+        # Calcul des centroïdes pour la prédiction
+        self.cluster_centers_ = np.array([
+            X[self.labels_ == i].mean(axis=0) if np.any(self.labels_ == i) else np.zeros(X.shape[1])
+            for i in range(self.n_clusters)
+        ])
+
+    def predict(self, X):
+        """Retourne les labels basés sur la distance aux centroïdes calculés."""
+        X = np.asarray(X, dtype=np.float32)
+        preds = []
+        for pt in X:
+            dist = np.linalg.norm(self.cluster_centers_ - pt, axis=1)
+            preds.append(np.argmin(dist))
+        return np.array(preds)
 
 def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_descriptor="", name_model="kmeans",bool_show=True):
     """

@@ -201,3 +201,4 @@ def compute_simclr_descriptor_single(img_bgr, models_dir="trained-models",
     color_normed = normalize(color_hist.reshape(1, -1))[0] * color_weight
     return np.concatenate([simclr_normed, color_normed])
 
+
