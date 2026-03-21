@@ -383,6 +383,9 @@ def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_des
     ami = metrics.adjusted_mutual_info_score(labels_true, labels_pred)
     silhouette = silhouette_score(descriptors, labels_pred)
     ari = adjusted_rand_score(labels_true, labels_pred)
+    
+    db_score = metrics.davies_bouldin_score(descriptors, labels_pred)
+    
     # Affichons les résultats
     if bool_show :
         print(f"########## Métrique descripteur : {name_descriptor}")
@@ -393,6 +396,7 @@ def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_des
         print(f"V-measure: {v_measure}")
         print(f"Silhouette Score: {silhouette}")
         print(f"Adjusted Mutual Information: {ami}")
+        print(f"Davies-Bouldin Score (Lower is Better): {db_score}")
     if bool_return:
         return {"ami":ami,
                 "ari":ari, 
@@ -402,4 +406,5 @@ def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_des
                 "v_measure":v_measure, 
                 "jaccard":jaccard,
                "descriptor":name_descriptor,
-               "name_model":name_model}
+               "name_model":name_model,
+               "db_score": db_score}
