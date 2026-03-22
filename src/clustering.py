@@ -7,6 +7,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler, normalize
 from sklearn.decomposition import PCA
 from sklearn.neighbors import kneighbors_graph
 from scipy.sparse.csgraph import connected_components
+from scipy.spatial.distance import cdist
 
 class KMeans:
     def __init__(self, n_clusters=8, max_iter=300, random_state=None):
@@ -300,6 +301,12 @@ class DIANA:
 
     def fit(self, X):
         X = np.asarray(X, dtype=np.float32)
+        
+        if X.shape[1] > 256:
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=64, random_state=self.random_state)
+            X = pca.fit_transform(X)
+            
         n_samples = X.shape[0]
         
         # Initialisation : un seul cluster contenant tout le monde
@@ -307,7 +314,7 @@ class DIANA:
         n_current_clusters = 1
 
         while n_current_clusters < self.n_clusters:
-            # 1. Sélection du cluster avec le plus grand diamètre (le plus étalé)
+            # 1. Sélection du cluster avec le plus grand diamètre (inertie)
             max_diameter = -1
             cluster_to_split = -1
             
@@ -315,8 +322,6 @@ class DIANA:
                 idx = np.where(current_labels == i)[0]
                 if len(idx) <= 1: continue
                 
-                # Calcul du diamètre (distance max entre deux points du cluster)
-                # Note: On utilise l'inertie ici pour la performance, conforme à la logique DIANA
                 cluster_points = X[idx]
                 centroid = cluster_points.mean(axis=0)
                 inertia = np.sum((cluster_points - centroid) ** 2)
@@ -327,44 +332,55 @@ class DIANA:
             
             if cluster_to_split == -1: break
 
-            # --- MÉTHODE DU GROUPE DISSIDENT (Macnaughton-Smith) ---
+            # --- MÉTHODE DU GROUPE DISSIDENT (Macnaughton-Smith) OPTIMISÉE ---
             idx_original = np.where(current_labels == cluster_to_split)[0]
-            group_C = list(idx_original) # Groupe original
-            group_S = []                 # Groupe dissident
-
-            # A. Trouver le premier dissident (celui le plus loin des autres en moyenne)
-            avg_dist_to_others = []
-            for i in group_C:
-                dist_i = np.linalg.norm(X[group_C] - X[i], axis=1)
-                avg_dist_to_others.append(np.mean(dist_i))
+            X_cluster = X[idx_original]
             
-            first_dissident_idx = group_C[np.argmax(avg_dist_to_others)]
-            group_S.append(first_dissident_idx)
-            group_C.remove(first_dissident_idx)
+            # A. Trouver le premier dissident (calcul matriciel via cdist)
+            # dist_matrix contient toutes les distances entre tous les points du cluster
+            dist_matrix = cdist(X_cluster, X_cluster, metric='euclidean')
+            avg_dist_to_others = np.mean(dist_matrix, axis=1)
+            
+            local_dissident_idx = np.argmax(avg_dist_to_others)
+            first_dissident_idx = idx_original[local_dissident_idx]
+            
+            group_S = [first_dissident_idx]
+            group_C = list(set(idx_original) - set(group_S))
 
             # B. Migration itérative vers le groupe dissident
             while True:
                 migration_happened = False
-                best_diff = -1
-                candidate_to_move = -1
+                
+                if len(group_C) == 0: break
 
-                for j in group_C:
-                    # Distance moyenne vers le groupe original (C)
-                    dist_to_C = np.mean(np.linalg.norm(X[group_C] - X[j], axis=1)) if len(group_C) > 1 else 0
-                    # Distance moyenne vers le groupe dissident (S)
-                    dist_to_S = np.mean(np.linalg.norm(X[group_S] - X[j], axis=1))
-                    
-                    diff = dist_to_C - dist_to_S
-                    if diff > best_diff and diff > 0:
-                        best_diff = diff
-                        candidate_to_move = j
+                # On extrait les données des deux groupes pour cdist
+                X_C = X[group_C]
+                X_S = X[group_S]
 
-                if candidate_to_move != -1:
+                # Calcul des distances moyennes vers chaque groupe d'un seul coup
+                # dist_to_C: pour chaque j dans C, moyenne des distances vers les autres de C
+                # On utilise cdist(X_C, X_C) pour avoir la matrice interne à C
+                if len(group_C) > 1:
+                    dists_within_C = cdist(X_C, X_C, metric='euclidean')
+                    avg_dists_to_C = np.sum(dists_within_C, axis=1) / (len(group_C) - 1)
+                else:
+                    avg_dists_to_C = np.zeros(1)
+
+                # dist_to_S: pour chaque j dans C, moyenne des distances vers tous les membres de S
+                dists_to_S_matrix = cdist(X_C, X_S, metric='euclidean')
+                avg_dists_to_S = np.mean(dists_to_S_matrix, axis=1)
+
+                # Vérification de la condition de transfert : d(j, C) - d(j, S) > 0
+                diffs = avg_dists_to_C - avg_dists_to_S
+                best_idx_local = np.argmax(diffs)
+
+                if diffs[best_idx_local] > 0:
+                    candidate_to_move = group_C[best_idx_local]
                     group_S.append(candidate_to_move)
                     group_C.remove(candidate_to_move)
                     migration_happened = True
                 
-                if not migration_happened or len(group_C) == 0:
+                if not migration_happened:
                     break
 
             # 3. Mise à jour des labels (le groupe S devient le nouveau cluster)
@@ -382,11 +398,9 @@ class DIANA:
 
     def predict(self, X):
         X = np.asarray(X, dtype=np.float32)
-        preds = []
-        for pt in X:
-            dist = np.linalg.norm(self.cluster_centers_ - pt, axis=1)
-            preds.append(np.argmin(dist))
-        return np.array(preds)
+        # Utilisation de cdist ici aussi pour accélérer la prédiction globale
+        dists_to_centers = cdist(X, self.cluster_centers_, metric='euclidean')
+        return np.argmin(dists_to_centers, axis=1)
 
 def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_descriptor="", name_model="kmeans",bool_show=True):
     """
