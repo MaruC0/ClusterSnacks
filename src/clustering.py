@@ -7,6 +7,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler, normalize
 from sklearn.decomposition import PCA
 from sklearn.neighbors import kneighbors_graph
 from scipy.sparse.csgraph import connected_components
+from scipy.spatial.distance import cdist
 
 class KMeans:
     def __init__(self, n_clusters=8, max_iter=300, random_state=None):
@@ -267,7 +268,7 @@ class DIANA:
     def __init__(self, n_clusters=8, random_state=42):
         """
         Initialise l'algorithme DIANA (Divisive Analysis).
-        Approche Top-Down : commence avec 1 cluster et divise récursivement.
+        Approche Top-Down pure utilisant la méthode du groupe dissident.
         """
         self.n_clusters = n_clusters
         self.random_state = random_state
@@ -276,62 +277,106 @@ class DIANA:
 
     def fit(self, X):
         X = np.asarray(X, dtype=np.float32)
+        
+        if X.shape[1] > 256:
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=64, random_state=self.random_state)
+            X = pca.fit_transform(X)
+            
         n_samples = X.shape[0]
         
-        # On commence avec tous les points dans le cluster 0
+        # Initialisation : un seul cluster contenant tout le monde
         current_labels = np.zeros(n_samples, dtype=int)
         n_current_clusters = 1
 
         while n_current_clusters < self.n_clusters:
-            # 1. Trouver le cluster avec la plus grande inertie (le plus "étalé")
-            max_inertia = -1
+            # 1. Sélection du cluster avec le plus grand diamètre (inertie)
+            max_diameter = -1
             cluster_to_split = -1
             
             for i in range(n_current_clusters):
-                cluster_points = X[current_labels == i]
-                if len(cluster_points) <= 1: continue
+                idx = np.where(current_labels == i)[0]
+                if len(idx) <= 1: continue
                 
+                cluster_points = X[idx]
                 centroid = cluster_points.mean(axis=0)
                 inertia = np.sum((cluster_points - centroid) ** 2)
                 
-                if inertia > max_inertia:
-                    max_inertia = inertia
+                if inertia > max_diameter:
+                    max_diameter = inertia
                     cluster_to_split = i
             
-            if cluster_to_split == -1: break # Impossible de diviser plus
+            if cluster_to_split == -1: break
 
-            # 2. Diviser ce cluster en 2 avec un KMeans binaire
-            split_data = X[current_labels == cluster_to_split]
-            from sklearn.cluster import KMeans as SklearnKMeans
-            km = SklearnKMeans(n_clusters=2, random_state=self.random_state, n_init=10)
-            split_labels = km.fit_predict(split_data)
-
-            # 3. Mettre à jour les labels
-            # Les points avec split_labels == 1 reçoivent un nouvel ID de cluster
-            new_cluster_id = n_current_clusters
-            idx_in_original = np.where(current_labels == cluster_to_split)[0]
+            # --- MÉTHODE DU GROUPE DISSIDENT (Macnaughton-Smith) OPTIMISÉE ---
+            idx_original = np.where(current_labels == cluster_to_split)[0]
+            X_cluster = X[idx_original]
             
-            for i, val in enumerate(split_labels):
-                if val == 1:
-                    current_labels[idx_in_original[i]] = new_cluster_id
+            # A. Trouver le premier dissident (calcul matriciel via cdist)
+            # dist_matrix contient toutes les distances entre tous les points du cluster
+            dist_matrix = cdist(X_cluster, X_cluster, metric='euclidean')
+            avg_dist_to_others = np.mean(dist_matrix, axis=1)
+            
+            local_dissident_idx = np.argmax(avg_dist_to_others)
+            first_dissident_idx = idx_original[local_dissident_idx]
+            
+            group_S = [first_dissident_idx]
+            group_C = list(set(idx_original) - set(group_S))
+
+            # B. Migration itérative vers le groupe dissident
+            while True:
+                migration_happened = False
+                
+                if len(group_C) == 0: break
+
+                # On extrait les données des deux groupes pour cdist
+                X_C = X[group_C]
+                X_S = X[group_S]
+
+                # Calcul des distances moyennes vers chaque groupe d'un seul coup
+                # dist_to_C: pour chaque j dans C, moyenne des distances vers les autres de C
+                # On utilise cdist(X_C, X_C) pour avoir la matrice interne à C
+                if len(group_C) > 1:
+                    dists_within_C = cdist(X_C, X_C, metric='euclidean')
+                    avg_dists_to_C = np.sum(dists_within_C, axis=1) / (len(group_C) - 1)
+                else:
+                    avg_dists_to_C = np.zeros(1)
+
+                # dist_to_S: pour chaque j dans C, moyenne des distances vers tous les membres de S
+                dists_to_S_matrix = cdist(X_C, X_S, metric='euclidean')
+                avg_dists_to_S = np.mean(dists_to_S_matrix, axis=1)
+
+                # Vérification de la condition de transfert : d(j, C) - d(j, S) > 0
+                diffs = avg_dists_to_C - avg_dists_to_S
+                best_idx_local = np.argmax(diffs)
+
+                if diffs[best_idx_local] > 0:
+                    candidate_to_move = group_C[best_idx_local]
+                    group_S.append(candidate_to_move)
+                    group_C.remove(candidate_to_move)
+                    migration_happened = True
+                
+                if not migration_happened:
+                    break
+
+            # 3. Mise à jour des labels (le groupe S devient le nouveau cluster)
+            new_cluster_id = n_current_clusters
+            for idx in group_S:
+                current_labels[idx] = new_cluster_id
             
             n_current_clusters += 1
 
         self.labels_ = current_labels
-        # Calcul des centroïdes pour la prédiction
         self.cluster_centers_ = np.array([
             X[self.labels_ == i].mean(axis=0) if np.any(self.labels_ == i) else np.zeros(X.shape[1])
             for i in range(self.n_clusters)
         ])
 
     def predict(self, X):
-        """Retourne les labels basés sur la distance aux centroïdes calculés."""
         X = np.asarray(X, dtype=np.float32)
-        preds = []
-        for pt in X:
-            dist = np.linalg.norm(self.cluster_centers_ - pt, axis=1)
-            preds.append(np.argmin(dist))
-        return np.array(preds)
+        # Utilisation de cdist ici aussi pour accélérer la prédiction globale
+        dists_to_centers = cdist(X, self.cluster_centers_, metric='euclidean')
+        return np.argmin(dists_to_centers, axis=1)
 
 def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_descriptor="", name_model="kmeans",bool_show=True):
     """

@@ -138,6 +138,22 @@ def compute_color_histograms(img_paths, h_bins=18, s_bins=8, size=64):
     return descriptors
 
 
+def compute_color_histogram_single(img_bgr, h_bins=18, s_bins=8, size=64):
+    """
+    Calcule l'histogramme HSV pour une seule image BGR en mémoire.
+    Utilisé pour la prédiction en direct dans le dashboard.
+    """
+    img = cv2.resize(img_bgr, (size, size))
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    h_hist = cv2.calcHist([hsv], [0], None, [h_bins], [0, 180]).flatten()
+    s_hist = cv2.calcHist([hsv], [1], None, [s_bins], [0, 256]).flatten()
+    hist = np.concatenate([h_hist, s_hist]).astype(np.float32)
+    s = hist.sum()
+    if s > 0:
+        hist /= s
+    return hist
+
+
 def compute_simclr_descriptors(img_paths, models_dir="trained-models",
                                 simclr_weight=0.7, color_weight=0.3):
     """

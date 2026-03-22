@@ -27,7 +27,7 @@ GAMMA_GRID_LOG = [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
 TEST_RBF_GAMMA_GRID = False
 
 def _create_models(n_clusters, desc_name):
-    """Crée les modèles de clustering pour un descripteur donné."""
+    """Crée les 4 modèles de clustering pour un descripteur donné."""
     sc_cfg = SPECTRAL_CONFIGS[desc_name]
     spectral_kwargs = {
         "n_clusters": n_clusters,
