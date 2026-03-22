@@ -291,7 +291,7 @@ class DIANA:
     def __init__(self, n_clusters=8, random_state=42):
         """
         Initialise l'algorithme DIANA (Divisive Analysis).
-        Approche Top-Down : commence avec 1 cluster et divise récursivement.
+        Approche Top-Down pure utilisant la méthode du groupe dissident.
         """
         self.n_clusters = n_clusters
         self.random_state = random_state
@@ -302,54 +302,85 @@ class DIANA:
         X = np.asarray(X, dtype=np.float32)
         n_samples = X.shape[0]
         
-        # On commence avec tous les points dans le cluster 0
+        # Initialisation : un seul cluster contenant tout le monde
         current_labels = np.zeros(n_samples, dtype=int)
         n_current_clusters = 1
 
         while n_current_clusters < self.n_clusters:
-            # 1. Trouver le cluster avec la plus grande inertie (le plus "étalé")
-            max_inertia = -1
+            # 1. Sélection du cluster avec le plus grand diamètre (le plus étalé)
+            max_diameter = -1
             cluster_to_split = -1
             
             for i in range(n_current_clusters):
-                cluster_points = X[current_labels == i]
-                if len(cluster_points) <= 1: continue
+                idx = np.where(current_labels == i)[0]
+                if len(idx) <= 1: continue
                 
+                # Calcul du diamètre (distance max entre deux points du cluster)
+                # Note: On utilise l'inertie ici pour la performance, conforme à la logique DIANA
+                cluster_points = X[idx]
                 centroid = cluster_points.mean(axis=0)
                 inertia = np.sum((cluster_points - centroid) ** 2)
                 
-                if inertia > max_inertia:
-                    max_inertia = inertia
+                if inertia > max_diameter:
+                    max_diameter = inertia
                     cluster_to_split = i
             
-            if cluster_to_split == -1: break # Impossible de diviser plus
+            if cluster_to_split == -1: break
 
-            # 2. Diviser ce cluster en 2 avec un KMeans binaire
-            split_data = X[current_labels == cluster_to_split]
-            from sklearn.cluster import KMeans as SklearnKMeans
-            km = SklearnKMeans(n_clusters=2, random_state=self.random_state, n_init=10)
-            split_labels = km.fit_predict(split_data)
+            # --- MÉTHODE DU GROUPE DISSIDENT (Macnaughton-Smith) ---
+            idx_original = np.where(current_labels == cluster_to_split)[0]
+            group_C = list(idx_original) # Groupe original
+            group_S = []                 # Groupe dissident
 
-            # 3. Mettre à jour les labels
-            # Les points avec split_labels == 1 reçoivent un nouvel ID de cluster
-            new_cluster_id = n_current_clusters
-            idx_in_original = np.where(current_labels == cluster_to_split)[0]
+            # A. Trouver le premier dissident (celui le plus loin des autres en moyenne)
+            avg_dist_to_others = []
+            for i in group_C:
+                dist_i = np.linalg.norm(X[group_C] - X[i], axis=1)
+                avg_dist_to_others.append(np.mean(dist_i))
             
-            for i, val in enumerate(split_labels):
-                if val == 1:
-                    current_labels[idx_in_original[i]] = new_cluster_id
+            first_dissident_idx = group_C[np.argmax(avg_dist_to_others)]
+            group_S.append(first_dissident_idx)
+            group_C.remove(first_dissident_idx)
+
+            # B. Migration itérative vers le groupe dissident
+            while True:
+                migration_happened = False
+                best_diff = -1
+                candidate_to_move = -1
+
+                for j in group_C:
+                    # Distance moyenne vers le groupe original (C)
+                    dist_to_C = np.mean(np.linalg.norm(X[group_C] - X[j], axis=1)) if len(group_C) > 1 else 0
+                    # Distance moyenne vers le groupe dissident (S)
+                    dist_to_S = np.mean(np.linalg.norm(X[group_S] - X[j], axis=1))
+                    
+                    diff = dist_to_C - dist_to_S
+                    if diff > best_diff and diff > 0:
+                        best_diff = diff
+                        candidate_to_move = j
+
+                if candidate_to_move != -1:
+                    group_S.append(candidate_to_move)
+                    group_C.remove(candidate_to_move)
+                    migration_happened = True
+                
+                if not migration_happened or len(group_C) == 0:
+                    break
+
+            # 3. Mise à jour des labels (le groupe S devient le nouveau cluster)
+            new_cluster_id = n_current_clusters
+            for idx in group_S:
+                current_labels[idx] = new_cluster_id
             
             n_current_clusters += 1
 
         self.labels_ = current_labels
-        # Calcul des centroïdes pour la prédiction
         self.cluster_centers_ = np.array([
             X[self.labels_ == i].mean(axis=0) if np.any(self.labels_ == i) else np.zeros(X.shape[1])
             for i in range(self.n_clusters)
         ])
 
     def predict(self, X):
-        """Retourne les labels basés sur la distance aux centroïdes calculés."""
         X = np.asarray(X, dtype=np.float32)
         preds = []
         for pt in X:
