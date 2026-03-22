@@ -73,13 +73,6 @@ def colorize_cluster(cluster_data, selected_cluster):
                       name=f'Cluster {selected_cluster}')
     return fig
 
-@st.cache_data
-def plot_metric(df_metric):
-    fig = px.bar(df_metric, x='descriptor', y='ami', color='name_model', barmode='group',
-                 title='Adjusted Mutual Information (AMI) Score',
-                 labels={'ami': 'AMI Score', 'descriptor': 'Descriptor type', 'name_model': 'Modèle'})
-    st.plotly_chart(fig, use_container_width=True)
-
 
 # ══════════════════════════════════════════════════════════════════
 #  ONGLETS
@@ -145,24 +138,105 @@ with tab2:
     st.write('## Analyse Global des descripteurs')
 
     if not df_metric.empty:
-        plot_metric(df_metric)
-        st.write('## Métriques')
-        st.dataframe(df_metric, use_container_width=True)
+        METRIC_OPTIONS = {
+            "AMI (Adjusted Mutual Information)": "ami",
+            "ARI (Adjusted Rand Index)": "ari",
+            "Silhouette Score": "silhouette",
+            "Homogeneity": "homogeneity",
+            "Completeness": "completeness",
+            "V-measure": "v_measure",
+            "Jaccard Index": "jaccard",
+        }
+        if "db_score" in df_metric.columns:
+            METRIC_OPTIONS["Davies-Bouldin (plus bas = mieux)"] = "db_score"
+
+        col_metric, col_filter = st.columns([2, 1])
+        with col_metric:
+            selected_metric_label = st.selectbox(
+                "Métrique à afficher", list(METRIC_OPTIONS.keys()), key="metric_select"
+            )
+        selected_metric = METRIC_OPTIONS[selected_metric_label]
+
+        with col_filter:
+            filter_mode = st.radio(
+                "Mode d'affichage", ["Tout afficher", "Filtrer"],
+                key="filter_mode", horizontal=True
+            )
+
+        df_filtered = df_metric.copy()
+
+        if filter_mode == "Filtrer":
+            col_desc, col_model = st.columns(2)
+            with col_desc:
+                desc_options = ["Tous"] + sorted(df_metric['descriptor'].unique().tolist())
+                sel_desc = st.selectbox("Descripteur", desc_options, key="global_desc")
+            with col_model:
+                model_options = ["Tous"] + sorted(df_metric['name_model'].unique().tolist())
+                sel_model = st.selectbox("Modèle", model_options, key="global_model")
+
+            if sel_desc != "Tous":
+                df_filtered = df_filtered[df_filtered['descriptor'] == sel_desc]
+            if sel_model != "Tous":
+                df_filtered = df_filtered[df_filtered['name_model'] == sel_model]
+
+        if not df_filtered.empty:
+            fig_metric = px.bar(
+                df_filtered, x='descriptor', y=selected_metric, color='name_model',
+                barmode='group',
+                title=selected_metric_label,
+                labels={
+                    selected_metric: selected_metric_label,
+                    'descriptor': 'Descripteur',
+                    'name_model': 'Modèle',
+                },
+            )
+            st.plotly_chart(fig_metric, use_container_width=True)
+        else:
+            st.info("Aucun résultat pour cette sélection.")
+
+        st.write('### Tableau des métriques')
+        st.dataframe(df_filtered, use_container_width=True)
     else:
         st.warning("Fichier de métriques non trouvé.")
 
     st.write('## Suivi du Silhouette Score')
     if silhouette_loaded:
-        sil_models = sorted(df_silhouette['model'].unique().tolist())
-        model_sil = st.selectbox('Modèle', sil_models, key="sil_model")
-        df_sil_filtered = df_silhouette[df_silhouette['model'] == model_sil]
-        fig_sil = px.line(
-            df_sil_filtered, x='k', y='silhouette', color='descriptor',
-            title=f'Silhouette Score par nombre de clusters ({model_sil})',
-            labels={'k': 'Nombre de clusters', 'silhouette': 'Silhouette Score', 'descriptor': 'Descripteur'},
-            markers=True
-        )
-        st.plotly_chart(fig_sil, use_container_width=True)
+        col_sil_model, col_sil_desc = st.columns(2)
+        with col_sil_model:
+            sil_models = ["Tous"] + sorted(df_silhouette['model'].unique().tolist())
+            model_sil = st.selectbox('Modèle', sil_models, key="sil_model")
+        with col_sil_desc:
+            sil_descs = ["Tous"] + sorted(df_silhouette['descriptor'].unique().tolist())
+            desc_sil = st.selectbox('Descripteur', sil_descs, key="sil_desc")
+
+        df_sil_filtered = df_silhouette.copy()
+        if model_sil != "Tous":
+            df_sil_filtered = df_sil_filtered[df_sil_filtered['model'] == model_sil]
+        if desc_sil != "Tous":
+            df_sil_filtered = df_sil_filtered[df_sil_filtered['descriptor'] == desc_sil]
+
+        if not df_sil_filtered.empty:
+            color_col = 'descriptor' if model_sil != "Tous" else 'model'
+            if model_sil == "Tous" and desc_sil == "Tous":
+                df_sil_filtered = df_sil_filtered.copy()
+                df_sil_filtered['combo'] = df_sil_filtered['descriptor'] + ' + ' + df_sil_filtered['model']
+                color_col = 'combo'
+
+            title_sil = 'Silhouette Score par nombre de clusters'
+            if model_sil != "Tous":
+                title_sil += f' ({model_sil})'
+            if desc_sil != "Tous":
+                title_sil += f' ({desc_sil})'
+
+            fig_sil = px.line(
+                df_sil_filtered, x='k', y='silhouette', color=color_col,
+                title=title_sil,
+                labels={'k': 'Nombre de clusters', 'silhouette': 'Silhouette Score'},
+                markers=True,
+            )
+            st.plotly_chart(fig_sil, use_container_width=True)
+        else:
+            st.info("Aucun résultat pour cette sélection.")
     else:
         st.warning("Données de suivi silhouette non disponibles. Relancez le pipeline.")
 
@@ -199,13 +273,8 @@ with tab3:
                 features = np.array(compute_gray_histograms([img_gray])[0])
             elif pred_descriptor == "LBP":
                 features = np.array(compute_lbp_descriptors([img_gray])[0])
-            elif pred_descriptor == "COLOR_HIST": 
-                img_small = cv2.resize(img_bgr, (64, 64))
-                hsv = cv2.cvtColor(img_small, cv2.COLOR_BGR2HSV)
-                h_hist = cv2.calcHist([hsv], [0], None, [18], [0, 180]).flatten()
-                s_hist = cv2.calcHist([hsv], [1], None, [8], [0, 256]).flatten()
-                features = np.concatenate([h_hist, s_hist])
-                if features.sum() > 0: features /= features.sum()
+            elif pred_descriptor == "COLOR_HIST":
+                features = np.array(compute_color_histogram_single(img_bgr))
 
             # Chargement des centroids
             model_key = MODEL_MAP[pred_model]
@@ -245,8 +314,8 @@ with tab3:
 with tab4:
     st.write('## Entraînement du modèle SimCLR')
     st.write(
-        "Le descripteur SimCLR utilise un ResNet50 fine-tuné par apprentissage "
-        "contrastif. Vous pouvez entraîner ou ré-entraîner le modèle ici."
+        "Le descripteur SimCLR utilise un CNN léger (~480K params) entraîné de zéro "
+        "par apprentissage contrastif (NT-Xent). Vous pouvez entraîner ou ré-entraîner le modèle ici."
     )
 
     simclr_model = SimCLRModel(models_dir=MODELS_DIR)

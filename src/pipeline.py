@@ -25,7 +25,7 @@ SPECTRAL_CONFIGS = {
 AGGLOMERATIVE_CONFIG = {"linkage": "ward"}
 
 def _create_models(n_clusters, desc_name):
-    """Crée les 3 modèles de clustering pour un descripteur donné."""
+    """Crée les 4 modèles de clustering pour un descripteur donné."""
     sc_cfg = SPECTRAL_CONFIGS[desc_name]
     return {
         "kmeans": KMeans(n_clusters=n_clusters, random_state=42),
