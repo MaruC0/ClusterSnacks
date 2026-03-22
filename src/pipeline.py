@@ -17,14 +17,16 @@ DESC_KEY_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simc
 AGGLOMERATIVE_CONFIG = {"linkage": "ward"}
 # Config SpectralClustering par descripteur
 SPECTRAL_CONFIGS = {
-    "HISTOGRAM": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.3},
-    "HOG":       {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 10.0},
-    "LBP":       {"affinity": "rbf", "n_neighbors": 20, "gamma": 3.0},
-    "SIMCLR":    {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 1.0},
+    "HISTOGRAM": {"affinity": "nearest_neighbors", "n_neighbors": 40, "gamma": 0.3},
+    "HOG":       {"affinity": "nearest_neighbors", "n_neighbors": 30, "gamma": 10.0},
+    "LBP":       {"affinity": "nearest_neighbors", "n_neighbors": 30, "gamma": 3.0},
+    "SIMCLR":    {"affinity": "nearest_neighbors", "n_neighbors": 25, "gamma": 1.0},
     "COLOR_HIST": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.03},
 }
 GAMMA_GRID_LOG = [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
 TEST_RBF_GAMMA_GRID = False
+N_NEIGHBORS_GRID = [5, 10, 15, 20, 25, 30, 40]
+TEST_N_NEIGHBORS_GRID = False
 
 def _create_models(n_clusters, desc_name):
     """Crée les 4 modèles de clustering pour un descripteur donné."""
@@ -64,7 +66,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
     descriptors_hist = compute_gray_histograms(images)
     print("- calcul features LBP...")
     descriptors_lbp = compute_lbp_descriptors(images)
-    print("- calcul features Color HSV (Your Part)...")
+    print("- calcul features Color HSV...")
     descriptors_color = compute_color_histograms(img_paths)
 
     print("- calcul features SimCLR...")
@@ -134,6 +136,50 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
                     best_gamma = gamma
 
             print(f"  -> meilleur gamma: {best_gamma} (silhouette={best_silhouette:.4f})")
+            cluster_results[(desc_key, "spectral")] = {
+                "model": best_model,
+                "data": data,
+                "labels": best_labels,
+            }
+            continue
+
+        if TEST_N_NEIGHBORS_GRID:
+            print(f"- spectral + {desc_name} [nearest_neighbors grid] ...")
+
+            best_silhouette = -np.inf
+            best_model = None
+            best_labels = None
+            best_n_neighbors = None
+
+            for n_neighbors in N_NEIGHBORS_GRID:
+                model = SpectralClustering(
+                    n_clusters=number_cluster,
+                    affinity='nearest_neighbors',
+                    n_neighbors=n_neighbors,
+                    assign_labels='cluster_qr',
+                    pca_components=64,
+                    random_state=42
+                )
+                model.fit(data)
+
+                unique, counts = np.unique(model.labels_, return_counts=True)
+                print(f"  n_neighbors={n_neighbors}: {len(unique)} clusters, distribution={dict(zip(unique.tolist(), counts.tolist()))}")
+
+                metric = show_metric(
+                    labels_true, model.labels_, desc_data,
+                    bool_show=True, name_descriptor=desc_name,
+                    name_model=f"spectral_knn_neighbors_{n_neighbors}", bool_return=True
+                )
+                metric["n_neighbors"] = n_neighbors
+                all_metrics.append(metric)
+
+                if metric["silhouette"] > best_silhouette:
+                    best_silhouette = metric["silhouette"]
+                    best_model = model
+                    best_labels = model.labels_
+                    best_n_neighbors = n_neighbors
+
+            print(f"  -> meilleur n_neighbors: {best_n_neighbors} (silhouette={best_silhouette:.4f})")
             cluster_results[(desc_key, "spectral")] = {
                 "model": best_model,
                 "data": data,
