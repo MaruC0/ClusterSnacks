@@ -17,11 +17,11 @@ DESC_KEY_MAP = {"HISTOGRAM": "hist", "HOG": "hog", "LBP": "lbp", "SIMCLR": "simc
 AGGLOMERATIVE_CONFIG = {"linkage": "ward"}
 # Config SpectralClustering par descripteur
 SPECTRAL_CONFIGS = {
-    "HISTOGRAM": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.3, "pca_components": 32},
-    "HOG":       {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 10.0, "pca_components": 64},
-    "LBP":       {"affinity": "rbf", "n_neighbors": 20, "gamma": 3.0, "pca_components": 16},
-    "SIMCLR":    {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 1.0, "pca_components": 64},
-    "COLOR_HIST": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.03, "pca_components": 16},
+    "HISTOGRAM": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.3},
+    "HOG":       {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 10.0},
+    "LBP":       {"affinity": "rbf", "n_neighbors": 20, "gamma": 3.0},
+    "SIMCLR":    {"affinity": "nearest_neighbors", "n_neighbors": 15, "gamma": 1.0},
+    "COLOR_HIST": {"affinity": "nearest_neighbors", "n_neighbors": 20, "gamma": 0.03},
 }
 GAMMA_GRID_LOG = [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
 TEST_RBF_GAMMA_GRID = False
@@ -33,7 +33,7 @@ def _create_models(n_clusters, desc_name):
         "n_clusters": n_clusters,
         "affinity": sc_cfg.get("affinity", "nearest_neighbors"),
         "assign_labels": 'cluster_qr',
-        "pca_components": sc_cfg["pca_components"],
+        "pca_components": 64,
         "random_state": 42,
     }
 
@@ -111,7 +111,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
                     affinity='rbf',
                     gamma=gamma,
                     assign_labels='cluster_qr',
-                    pca_components=sc_cfg["pca_components"],
+                    pca_components=64,
                     random_state=42
                 )
                 model.fit(data)
@@ -182,13 +182,13 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
                 "n_clusters": k,
                 "affinity": sc_cfg.get("affinity", "nearest_neighbors"),
                 "assign_labels": 'cluster_qr',
-                "pca_components": sc_cfg["pca_components"],
+                "pca_components": 64,
                 "random_state": 42,
             }
             if spectral_kwargs["affinity"] == "nearest_neighbors":
                 spectral_kwargs["n_neighbors"] = sc_cfg["n_neighbors"]
             elif spectral_kwargs["affinity"] == "rbf":
-                spectral_kwargs["gamma"] = sc_cfg.get("gamma", 1.0)
+                spectral_kwargs["gamma"] = sc_cfg.get("gamma", 3.0)
 
             sc = SpectralClustering(**spectral_kwargs)
             sc.fit(data)

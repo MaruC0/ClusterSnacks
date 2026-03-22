@@ -51,7 +51,7 @@ def compute_hog_descriptors(images):
 def compute_lbp_descriptors(
     images,
     scales=((8, 1), (16, 2), (24, 3)),
-    spatial_levels=(1, 2),
+    spatial_levels=(1, 2, 3),
     method='uniform'
 ):
     """
@@ -61,7 +61,7 @@ def compute_lbp_descriptors(
     - images (array-like) : liste/tableau des images grayscale
     - scales (tuple) : tuple de couples (P, R) pour LBP multi-échelle
       ex: ((8,1), (16,2), (24,3))
-    - spatial_levels (tuple) : niveaux de grille spatiale (1 => 1x1, 2 => 2x2, ...)
+    - spatial_levels (tuple) : niveaux de grille spatiale (1 => 1x1, 2 => 2x2, 3 => 3x3, ...)
     - method (str) : méthode LBP (par défaut 'uniform')
 
     Output :

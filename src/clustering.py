@@ -174,40 +174,6 @@ class SpectralClustering:
                 return k
             k = min(k + 5, n_samples - 1)
 
-    def _enforce_exact_number_of_clusters(self, labels, X):
-        """
-        Force l'existence de n_clusters labels distincts si nécessaire,
-        en réaffectant quelques points des clusters majoritaires.
-        """
-        labels = np.asarray(labels, dtype=int).copy()
-        if X.shape[0] < self.n_clusters:
-            raise ValueError(
-                f"Nombre d'échantillons ({X.shape[0]}) inférieur à n_clusters ({self.n_clusters})."
-            )
-
-        unique_labels = set(np.unique(labels).tolist())
-        expected_labels = set(range(self.n_clusters))
-        missing_labels = sorted(list(expected_labels - unique_labels))
-
-        if not missing_labels:
-            return labels
-
-        for missing in missing_labels:
-            counts = np.bincount(labels, minlength=self.n_clusters)
-            donor = int(np.argmax(counts))
-            donor_idx = np.where(labels == donor)[0]
-
-            # On évite de vider un cluster existant
-            if donor_idx.size <= 1:
-                continue
-
-            centroid = X[donor_idx].mean(axis=0)
-            distances = np.linalg.norm(X[donor_idx] - centroid, axis=1)
-            idx_to_move = donor_idx[int(np.argmax(distances))]
-            labels[idx_to_move] = missing
-
-        return labels
-
     def fit(self, X):
         """
         Exécute l'algorithme Spectral Clustering sur les données X.
@@ -244,7 +210,7 @@ class SpectralClustering:
 
         self.clusterer_ = SklearnSpectralClustering(**spectral_kwargs)
         labels = self.clusterer_.fit_predict(X)
-        self.labels_ = self._enforce_exact_number_of_clusters(labels, X)
+        self.labels_ = labels
 
     def predict(self, X):
         """
