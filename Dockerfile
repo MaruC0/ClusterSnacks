@@ -1,17 +1,27 @@
-FROM python:3.10
+# Utiliser une image Python officielle et légère
+FROM python:3.10-slim
 
+# Définir le répertoire de travail dans le conteneur
 WORKDIR /app
 
+# Installer les dépendances système nécessaires pour OpenCV (cv2)
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copier le fichier des dépendances
 COPY requierements.txt .
+
+# Installer les bibliothèques Python
 RUN pip install --no-cache-dir -r requierements.txt
 
-COPY src/ ./src/
+# Copier tout le reste du code source
+COPY . .
 
-WORKDIR /app/src
-
+# Exposer le port par défaut de Streamlit
 EXPOSE 8501
 
-RUN mkdir -p ~/.streamlit && \
-    echo "[server]\nheadless = true\nport = 8501\nenableXsrfProtection = false\n" > ~/.streamlit/config.toml
-
-CMD ["streamlit", "run", "dashboard_clustering.py"]
+# Commande pour lancer le dashboard
+# On ajoute "--", "--path_data", "src/output" pour lui indiquer le bon dossier
+CMD ["streamlit", "run", "src/dashboard_clustering.py", "--server.port=8501", "--server.address=0.0.0.0", "--", "--path_data", "src/output"]
