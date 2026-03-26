@@ -45,11 +45,11 @@ def _create_models(n_clusters, desc_name):
         spectral_kwargs["gamma"] = sc_cfg["gamma"]
 
     return {
-        ##"kmeans": KMeans(n_clusters=n_clusters, random_state=42),
-        "spectral": SpectralClustering(**spectral_kwargs)
-        ##"agglomerative": AgglomerativeClustering(n_clusters=n_clusters, 
-            ##linkage=AGGLOMERATIVE_CONFIG["linkage"]),
-        ##"diana": DIANA(n_clusters=n_clusters, random_state=42),
+        "kmeans": KMeans(n_clusters=n_clusters, random_state=42),
+        "spectral": SpectralClustering(**spectral_kwargs),
+        "agglomerative": AgglomerativeClustering(n_clusters=n_clusters, 
+            linkage=AGGLOMERATIVE_CONFIG["linkage"]),
+        "diana": DIANA(n_clusters=n_clusters, random_state=42)
     }
 
 
@@ -208,7 +208,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
                 "labels": model.labels_,
             }
 
-    '''
+    
     # ── Silhouette Score Tracking ─────────────────────────────────
     print("\n\n##### Silhouette Score Tracking ######")
     k_values = [5, 10, 15, 20, 25]
@@ -257,7 +257,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
             print(f"  {desc_name}: km={sil_km:.4f}  sp={sil_sc:.4f}  ag={sil_ac:.4f}  di={sil_diana:.4f}")
 
     df_silhouette = pd.DataFrame(silhouette_records)
-    '''
+    
 
     # ── Export des données ────────────────────────────────────────
     print("\n\n- export des données vers le dashboard")
@@ -288,7 +288,7 @@ def pipeline(path_data=PATH_DATA, path_output=PATH_OUTPUT):
                 np.save(f"{path_output}/centroids_{model_name}_{desc_key}.npy", centroids)
 
     df_metric.to_excel(f"{path_output}/save_metric.xlsx")
-    #df_silhouette.to_excel(f"{path_output}/save_silhouette_tracking.xlsx", index=False)
+    df_silhouette.to_excel(f"{path_output}/save_silhouette_tracking.xlsx", index=False)
 
     print("Fin. \n\n Pour avoir la visualisation dashboard, veuillez lancer la commande : streamlit run dashboard_clustering.py")
 
