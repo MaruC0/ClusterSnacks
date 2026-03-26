@@ -3,7 +3,7 @@
 ### step 1 : téléchargement des données et installation des packages
     - a. installer les requierements : "pip install -r requierements.txt"
     - b. télécharger les données des images des snacks : https://huggingface.co/datasets/Matthijs/snacks/tree/main
-    => télécharger le zip images, dézipper et placer le dossier dans le projet (structure : images/data/train, images/data/test, images/data/validation)
+    => télécharger le zip images, dézipper, récupérer le dossier data dans le dossier images et placer le dossier data dans le projet dans le dossier src.
 
 ### step 2 : configuration du chemin vers les données
     - a. dans le dossier src/constant.py, modifier les variables PATH_DATA et PATH_ALL_DATA si nécessaire.
