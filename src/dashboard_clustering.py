@@ -110,22 +110,35 @@ with tab1:
             fig.update_traces(marker_size=3)
             st.plotly_chart(fig, use_container_width=True)
 
-            st.write(f"#### Exemple d'images classées dans le cluster {selected_cluster} :")
-            nb_images = min(10, len(cluster_indices))
+            # --- DÉBUT DES AJOUTS ---
+            # 1. Affichage du nombre total d'images dans le sous-titre
+            st.write(f"#### Images classées dans le cluster {selected_cluster} (Total : {len(cluster_indices)} images)")
+            
+            # 2. Ajout du Toggle
+            show_all = st.toggle("Afficher toutes les images", value=False)
+            
+            # 3. Logique du nombre d'images à afficher
+            nb_images = len(cluster_indices) if show_all else min(10, len(cluster_indices))
 
             if nb_images > 0 and images_loaded:
-                cols = st.columns(nb_images)
-                for i in range(nb_images):
-                    index = cluster_indices[i]
-                    if index < len(img_paths):
-                        img_bgr = cv2.imread(img_paths[index], cv2.IMREAD_COLOR)
-                        if img_bgr is None:
-                            continue
-                        image_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-                        fig_img, ax = plt.subplots(figsize=(1, 1))
-                        ax.imshow(image_rgb, interpolation='nearest')
-                        ax.axis('off')
-                        cols[i].pyplot(fig_img)
+                # 4. Affichage dynamique par lignes de 10 pour ne pas casser l'UI
+                cols_per_row = 10
+                for i in range(0, nb_images, cols_per_row):
+                    chunk_size = min(cols_per_row, nb_images - i)
+                    cols = st.columns(chunk_size)
+                    
+                    for j in range(chunk_size):
+                        index = cluster_indices[i + j]
+                        if index < len(img_paths):
+                            img_bgr = cv2.imread(img_paths[index], cv2.IMREAD_COLOR)
+                            if img_bgr is None:
+                                continue
+                            image_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                            fig_img, ax = plt.subplots(figsize=(1, 1))
+                            ax.imshow(image_rgb, interpolation='nearest')
+                            ax.axis('off')
+                            cols[j].pyplot(fig_img)
+            # --- FIN DES AJOUTS ---
             elif not images_loaded:
                 st.warning("Images non disponibles. Vérifiez le chemin vers les images.")
             else:

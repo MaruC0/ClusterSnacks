@@ -18,6 +18,7 @@ env/
 
 # Images et données
 images/
+data/
 src/images/
 src/output/
 output/
