@@ -3,10 +3,14 @@
 ### step 1 : téléchargement des données et installation des packages
     - a. installer les requierements : "pip install -r requierements.txt"
     - b. télécharger les données des images des snacks : https://huggingface.co/datasets/Matthijs/snacks/tree/main
-    => télécharger le zip images, dézipper et placer le dossier dans le projet (structure : images/data/train, images/data/test, images/data/validation)
+    => télécharger le zip images, dézipper et placer le dossier data qui est dans le dossier images dans le projet (structure : data/train, data/test, data/validation)
 
 ### step 2 : configuration du chemin vers les données
     - a. dans le dossier src/constant.py, modifier les variables PATH_DATA et PATH_ALL_DATA si nécessaire.
+    Si les images n'apparaissent pas sous la répartition de clusters dans la premère page du dashboard :
+    Modifier le directory des images dans le fichier constant.py à : 
+    - PATH_DATA = "../data/test"
+    - PATH_ALL_DATA = "../data/tous"
 
 ### step 3 : run de la pipeline clustering
     - a. aller dans le dossier src
@@ -24,9 +28,3 @@
     - b. Se mettre dans la racine du dossier ../ClusterSnacks/
     - b. pour build une image docker : docker build -t clustersnacks .
     - c. pour run l'image et créer le dashboard : docker run -p 8501:8501 -v "$(pwd)/data:/app/data" clustersnacks
-
-### Troubleshooting : 
-    - a. Si les images n'apparaissent pas sous la répartition de clusters dans la premère page du dashboard :
-    Modifier le directory des images dans le fichier constant.py à : 
-    - PATH_DATA = "../data/test"
-    - PATH_ALL_DATA = "../data/tous"
