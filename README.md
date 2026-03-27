@@ -20,6 +20,13 @@
     - Onglets : Analyse par descripteur, Analyse global, Prédiction en direct, Entraînement SimCLR
 
 ### step 5 : Docker
-    - a. installer docker
-    - b. pour build une image docker : docker build -t mon-app-python .
-    - c. pour run l'image : docker run -d -p 8501:8501 mon-app-python
+    - a. Initialiser docker
+    - b. Se mettre dans la racine du dossier ../ClusterSnacks/
+    - b. pour build une image docker : docker build -t clustersnacks .
+    - c. pour run l'image et créer le dashboard : docker run -p 8501:8501 -v "$(pwd)/data:/app/data" clustersnacks
+
+### Troubleshooting : 
+    - a. Si les images n'apparaissent pas sous la répartition de clusters dans la premère page du dashboard :
+    Modifier le directory des images dans le fichier constant.py à : 
+    - PATH_DATA = "../data/test"
+    - PATH_ALL_DATA = "../data/tous"
